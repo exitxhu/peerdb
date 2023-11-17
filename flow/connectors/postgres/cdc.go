@@ -25,7 +25,7 @@ type PostgresCDCSource struct {
 	ctx                    context.Context
 	replPool               *pgxpool.Pool
 	SrcTableIDNameMapping  map[uint32]string
-	TableNameMapping       map[string]string
+	TableNameMapping       map[string]model.NameAndExclude
 	slot                   string
 	publication            string
 	relationMessageMapping model.RelationMessageMapping
@@ -44,7 +44,7 @@ type PostgresCDCConfig struct {
 	Slot                   string
 	Publication            string
 	SrcTableIDNameMapping  map[uint32]string
-	TableNameMapping       map[string]string
+	TableNameMapping       map[string]model.NameAndExclude
 	RelationMessageMapping model.RelationMessageMapping
 }
 
@@ -451,7 +451,7 @@ func (p *PostgresCDCSource) processInsertMessage(
 	}
 
 	// create empty map of string to interface{}
-	items, _, err := p.convertTupleToMap(msg.Tuple, rel)
+	items, _, err := p.convertTupleToMap(msg.Tuple, rel, p.TableNameMapping[tableName].Exclude)
 	if err != nil {
 		return nil, fmt.Errorf("error converting tuple to map: %w", err)
 	}
@@ -459,7 +459,7 @@ func (p *PostgresCDCSource) processInsertMessage(
 	return &model.InsertRecord{
 		CheckPointID:         int64(lsn),
 		Items:                items,
-		DestinationTableName: p.TableNameMapping[tableName],
+		DestinationTableName: p.TableNameMapping[tableName].Name,
 		SourceTableName:      tableName,
 	}, nil
 }
@@ -485,12 +485,12 @@ func (p *PostgresCDCSource) processUpdateMessage(
 	}
 
 	// create empty map of string to interface{}
-	oldItems, _, err := p.convertTupleToMap(msg.OldTuple, rel)
+	oldItems, _, err := p.convertTupleToMap(msg.OldTuple, rel, p.TableNameMapping[tableName].Exclude)
 	if err != nil {
 		return nil, fmt.Errorf("error converting old tuple to map: %w", err)
 	}
 
-	newItems, unchangedToastColumns, err := p.convertTupleToMap(msg.NewTuple, rel)
+	newItems, unchangedToastColumns, err := p.convertTupleToMap(msg.NewTuple, rel, p.TableNameMapping[tableName].Exclude)
 	if err != nil {
 		return nil, fmt.Errorf("error converting new tuple to map: %w", err)
 	}
@@ -499,7 +499,7 @@ func (p *PostgresCDCSource) processUpdateMessage(
 		CheckPointID:          int64(lsn),
 		OldItems:              oldItems,
 		NewItems:              newItems,
-		DestinationTableName:  p.TableNameMapping[tableName],
+		DestinationTableName:  p.TableNameMapping[tableName].Name,
 		SourceTableName:       tableName,
 		UnchangedToastColumns: unchangedToastColumns,
 	}, nil
@@ -526,7 +526,7 @@ func (p *PostgresCDCSource) processDeleteMessage(
 	}
 
 	// create empty map of string to interface{}
-	items, _, err := p.convertTupleToMap(msg.OldTuple, rel)
+	items, _, err := p.convertTupleToMap(msg.OldTuple, rel, p.TableNameMapping[tableName].Exclude)
 	if err != nil {
 		return nil, fmt.Errorf("error converting tuple to map: %w", err)
 	}
@@ -534,7 +534,7 @@ func (p *PostgresCDCSource) processDeleteMessage(
 	return &model.DeleteRecord{
 		CheckPointID:         int64(lsn),
 		Items:                items,
-		DestinationTableName: p.TableNameMapping[tableName],
+		DestinationTableName: p.TableNameMapping[tableName].Name,
 		SourceTableName:      tableName,
 	}, nil
 }
@@ -549,6 +549,7 @@ It takes a tuple and a relation message as input and returns
 func (p *PostgresCDCSource) convertTupleToMap(
 	tuple *pglogrepl.TupleData,
 	rel *protos.RelationMessage,
+	exclude map[string]struct{},
 ) (*model.RecordItems, map[string]struct{}, error) {
 	// if the tuple is nil, return an empty map
 	if tuple == nil {
@@ -561,6 +562,9 @@ func (p *PostgresCDCSource) convertTupleToMap(
 
 	for idx, col := range tuple.Columns {
 		colName := rel.Columns[idx].Name
+		if _, ok := exclude[colName]; ok {
+			continue
+		}
 		switch col.DataType {
 		case 'n': // null
 			val := &qvalue.QValue{Kind: qvalue.QValueKindInvalid, Value: nil}
@@ -681,7 +685,7 @@ func (p *PostgresCDCSource) processRelationMessage(
 		// set it to the source table for now, so we can update the schema on the source side
 		// then at the Workflow level we set it t
 		SrcTableName: p.SrcTableIDNameMapping[currRel.RelationId],
-		DstTableName: p.TableNameMapping[p.SrcTableIDNameMapping[currRel.RelationId]],
+		DstTableName: p.TableNameMapping[p.SrcTableIDNameMapping[currRel.RelationId]].Name,
 		AddedColumns: make([]*protos.DeltaAddedColumn, 0),
 	}
 	for _, column := range currRel.Columns {
