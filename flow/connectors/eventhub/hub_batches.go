@@ -8,7 +8,6 @@ import (
 	"time"
 
 	azeventhubs "github.com/Azure/azure-sdk-for-go/sdk/messaging/azeventhubs"
-	cmap "github.com/orcaman/concurrent-map/v2"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 )
@@ -121,8 +120,7 @@ func (h *HubBatches) flushAllBatches(
 
 	var numEventsPushed int32
 	g, gCtx := errgroup.WithContext(ctx)
-	g.SetLimit(int(maxParallelism)) // limit parallel merges to 8
-	tableNameRowsMapping := cmap.New[uint32]()
+	g.SetLimit(int(maxParallelism))
 	h.ForEach(func(tblName ScopedEventhub, eventBatch *azeventhubs.EventDataBatch) {
 		g.Go(func() error {
 			numEvents := eventBatch.NumEvents()
@@ -135,17 +133,12 @@ func (h *HubBatches) flushAllBatches(
 			log.WithFields(log.Fields{
 				"flowName": flowName,
 			}).Infof("pushed %d events to event hub: %s", numEvents, tblName)
-			rowCount, ok := tableNameRowsMapping.Get(tblName.ToString())
-			if !ok {
-				rowCount = uint32(0)
-			}
-			rowCount += uint32(numEvents)
-			tableNameRowsMapping.Set(tblName.ToString(), rowCount)
 			return nil
 		})
 	})
 
-	log.Infof("[sendEventBatch] successfully sent %d events to event hub", numEventsPushed)
+	log.Infof("[sendEventBatch] successfully sent %d events in total to event hub",
+		numEventsPushed)
 	return g.Wait()
 }
 
