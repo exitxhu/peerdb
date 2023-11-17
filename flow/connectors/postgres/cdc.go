@@ -266,6 +266,10 @@ func (p *PostgresCDCSource) consumeStream(
 			return fmt.Errorf("received Postgres WAL error: %+v", errMsg)
 		}
 
+		if rawMsg == nil {
+			continue
+		}
+
 		msg, ok := rawMsg.(*pgproto3.CopyData)
 		if !ok {
 			log.Warnf("unexpected message type: %T", rawMsg)
