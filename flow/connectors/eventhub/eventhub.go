@@ -67,11 +67,6 @@ func (c *EventHubConnector) Close() error {
 		allErrors = errors.Join(allErrors, err)
 	}
 
-	if ctx.Err() != nil {
-		log.Errorf("failed to close eventhub clients: %v", ctx.Err())
-		allErrors = errors.Join(allErrors, ctx.Err())
-	}
-
 	// close the postgres metadata store.
 	err = c.pgMetadata.Close()
 	if err != nil {
@@ -172,13 +167,6 @@ func (c *EventHubConnector) processBatch(
 			return 0, err
 		}
 
-		if ctx.Err() != nil {
-			log.WithFields(log.Fields{
-				"flowName": flowJobName,
-			}).Infof("failed to add event to batch: %v", ctx.Err())
-			return 0, ctx.Err()
-		}
-
 		if numRecords%1000 == 0 {
 			log.WithFields(log.Fields{
 				"flowName": flowJobName,
@@ -197,10 +185,6 @@ func (c *EventHubConnector) processBatch(
 
 	if flushErr != nil {
 		return 0, flushErr
-	}
-
-	if ctx.Err() != nil {
-		return 0, ctx.Err()
 	}
 
 	batchPerTopic.Clear()
