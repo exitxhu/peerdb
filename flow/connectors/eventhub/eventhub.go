@@ -175,7 +175,7 @@ func (c *EventHubConnector) processBatch(
 		if ctx.Err() != nil {
 			log.WithFields(log.Fields{
 				"flowName": flowJobName,
-			}).Infof("failed to add event to batch: %v", err)
+			}).Infof("failed to add event to batch: %v", ctx.Err())
 			return 0, ctx.Err()
 		}
 
