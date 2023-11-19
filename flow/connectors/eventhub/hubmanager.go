@@ -2,6 +2,7 @@ package conneventhub
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -61,6 +62,11 @@ func (m *EventHubManager) GetOrCreateHubClient(ctx context.Context, name ScopedE
 		hubTmp := hub.(*azeventhubs.ProducerClient)
 		_, err := hubTmp.GetEventHubProperties(ctx, nil)
 		if err != nil {
+			closeErr := hubTmp.Close(ctx)
+			if closeErr != nil {
+				log.Warnf("failed to close eventhub client which was not reachable: %v", closeErr)
+			}
+
 			log.Infof("eventhub %s not reachable. Will re-establish connection and re-create it. Err: %v", name, err)
 			m.hubs.Delete(name)
 			hubConnectOK = false
@@ -160,4 +166,21 @@ func (m *EventHubManager) getEventHubMgmtClient(subID string) (*armeventhub.Even
 	}
 
 	return hubClient, nil
+}
+
+// Close closes all the eventhub clients.
+func (m *EventHubManager) Close(ctx context.Context) error {
+	var allErrors error
+
+	m.hubs.Range(func(key, value any) bool {
+		hub := value.(*azeventhubs.ProducerClient)
+		err := hub.Close(ctx)
+		if err != nil {
+			log.Errorf("failed to close eventhub client: %v", err)
+			allErrors = errors.Join(allErrors, err)
+		}
+		return true
+	})
+
+	return allErrors
 }

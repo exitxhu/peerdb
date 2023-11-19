@@ -55,8 +55,15 @@ func NewEventHubConnector(
 func (c *EventHubConnector) Close() error {
 	var allErrors error
 
+	// close all the eventhub clients.
+	err := c.hubManager.Close(context.Background())
+	if err != nil {
+		log.Errorf("failed to close eventhub clients: %v", err)
+		allErrors = errors.Join(allErrors, err)
+	}
+
 	// close the postgres metadata store.
-	err := c.pgMetadata.Close()
+	err = c.pgMetadata.Close()
 	if err != nil {
 		log.Errorf("failed to close postgres metadata store: %v", err)
 		allErrors = errors.Join(allErrors, err)
