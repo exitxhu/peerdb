@@ -158,9 +158,9 @@ func (c *EventHubConnector) processBatch(
 
 		ctx, cancel := context.WithTimeout(c.ctx, 10*time.Second)
 
-		log.Infof("adding event to batch for topic %s...", topicName)
+		log.Infof("[%s] adding event to batch for topic %s...", flowJobName, topicName)
 		err = batchPerTopic.AddEvent(ctx, topicName, json)
-		log.Infof("added event to batch for topic %s", topicName)
+		log.Infof("[%s] added event to batch for topic %s", flowJobName, topicName)
 
 		cancel()
 

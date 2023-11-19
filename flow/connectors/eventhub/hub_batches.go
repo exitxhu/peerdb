@@ -2,8 +2,8 @@ package conneventhub
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"strings"
 	"sync/atomic"
 	"time"
 
@@ -37,7 +37,7 @@ func (h *HubBatches) AddEvent(ctx context.Context, name ScopedEventhub, event st
 
 	err := tryAddEventToBatch(event, batch)
 	if err != nil {
-		if strings.Contains(err.Error(), "too large for the batch") {
+		if errors.Is(err, azeventhubs.ErrEventDataTooLarge) {
 			log.WithFields(log.Fields{
 				"event": event,
 			}).Infof("event too large for batch, sending batch - %s", name)
