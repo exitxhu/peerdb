@@ -57,13 +57,19 @@ func (c *EventHubConnector) Close() error {
 
 	// create a subcontext with a 1 minute timeout.
 	ctx, cancel := context.WithTimeout(c.ctx, 1*time.Minute)
-	defer cancel()
 
 	// close all the eventhub clients.
 	err := c.hubManager.Close(ctx)
+	cancel()
+
 	if err != nil {
 		log.Errorf("failed to close eventhub clients: %v", err)
 		allErrors = errors.Join(allErrors, err)
+	}
+
+	if ctx.Err() != nil {
+		log.Errorf("failed to close eventhub clients: %v", ctx.Err())
+		allErrors = errors.Join(allErrors, ctx.Err())
 	}
 
 	// close the postgres metadata store.
@@ -156,14 +162,21 @@ func (c *EventHubConnector) processBatch(
 		}
 
 		ctx, cancel := context.WithTimeout(c.ctx, 10*time.Second)
-		defer cancel()
-
 		err = batchPerTopic.AddEvent(ctx, topicName, json)
+		cancel()
+
 		if err != nil {
 			log.WithFields(log.Fields{
 				"flowName": flowJobName,
 			}).Infof("failed to add event to batch: %v", err)
 			return 0, err
+		}
+
+		if ctx.Err() != nil {
+			log.WithFields(log.Fields{
+				"flowName": flowJobName,
+			}).Infof("failed to add event to batch: %v", err)
+			return 0, ctx.Err()
 		}
 
 		if numRecords%1000 == 0 {
@@ -178,12 +191,18 @@ func (c *EventHubConnector) processBatch(
 	}).Infof("processed %d records for sending", numRecords)
 
 	ctx, cancel := context.WithTimeout(c.ctx, 1*time.Minute)
-	defer cancel()
 
 	flushErr := batchPerTopic.flushAllBatches(ctx, maxParallelism, flowJobName)
+	cancel()
+
 	if flushErr != nil {
 		return 0, flushErr
 	}
+
+	if ctx.Err() != nil {
+		return 0, ctx.Err()
+	}
+
 	batchPerTopic.Clear()
 
 	log.WithFields(log.Fields{
