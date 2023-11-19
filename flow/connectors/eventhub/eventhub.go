@@ -55,8 +55,12 @@ func NewEventHubConnector(
 func (c *EventHubConnector) Close() error {
 	var allErrors error
 
+	// create a subcontext with a 1 minute timeout.
+	ctx, cancel := context.WithTimeout(c.ctx, 1*time.Minute)
+	defer cancel()
+
 	// close all the eventhub clients.
-	err := c.hubManager.Close(context.Background())
+	err := c.hubManager.Close(ctx)
 	if err != nil {
 		log.Errorf("failed to close eventhub clients: %v", err)
 		allErrors = errors.Join(allErrors, err)
@@ -129,7 +133,6 @@ func (c *EventHubConnector) processBatch(
 	batch *model.CDCRecordStream,
 	maxParallelism int64,
 ) (uint32, error) {
-	ctx := context.Background()
 	batchPerTopic := NewHubBatches(c.hubManager)
 	toJSONOpts := model.NewToJSONOptions(c.config.UnnestColumns)
 
@@ -152,6 +155,9 @@ func (c *EventHubConnector) processBatch(
 			return 0, err
 		}
 
+		ctx, cancel := context.WithTimeout(c.ctx, 10*time.Second)
+		defer cancel()
+
 		err = batchPerTopic.AddEvent(ctx, topicName, json)
 		if err != nil {
 			log.WithFields(log.Fields{
@@ -170,6 +176,9 @@ func (c *EventHubConnector) processBatch(
 	log.WithFields(log.Fields{
 		"flowName": flowJobName,
 	}).Infof("processed %d records for sending", numRecords)
+
+	ctx, cancel := context.WithTimeout(c.ctx, 1*time.Minute)
+	defer cancel()
 
 	flushErr := batchPerTopic.flushAllBatches(ctx, maxParallelism, flowJobName)
 	if flushErr != nil {

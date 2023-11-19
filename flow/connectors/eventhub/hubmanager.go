@@ -41,7 +41,7 @@ func NewEventHubManager(
 	}
 }
 
-func (m *EventHubManager) GetOrCreateHubClient(ctx context.Context, name ScopedEventhub) (
+func (m *EventHubManager) GetOrCreateHubClient(parCtx context.Context, name ScopedEventhub) (
 	*azeventhubs.ProducerClient, error) {
 	ehConfig, ok := m.peerConfig.Get(name.PeerName)
 	if !ok {
@@ -54,6 +54,9 @@ func (m *EventHubManager) GetOrCreateHubClient(ctx context.Context, name ScopedE
 	if strings.Count(namespace, ".") < 2 {
 		namespace = fmt.Sprintf("%s.servicebus.windows.net", namespace)
 	}
+
+	ctx, cancel := context.WithTimeout(parCtx, 30*time.Second)
+	defer cancel()
 
 	var hubConnectOK bool
 	var hub any
