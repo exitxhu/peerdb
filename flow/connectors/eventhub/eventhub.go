@@ -157,7 +157,11 @@ func (c *EventHubConnector) processBatch(
 		}
 
 		ctx, cancel := context.WithTimeout(c.ctx, 10*time.Second)
+
+		log.Infof("adding event to batch for topic %s...", topicName)
 		err = batchPerTopic.AddEvent(ctx, topicName, json)
+		log.Infof("added event to batch for topic %s", topicName)
+
 		cancel()
 
 		if err != nil {

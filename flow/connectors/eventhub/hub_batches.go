@@ -14,60 +14,46 @@ import (
 
 // multimap from ScopedEventhub to *azeventhubs.EventDataBatch
 type HubBatches struct {
-	batches map[ScopedEventhub][]*azeventhubs.EventDataBatch
+	batches map[ScopedEventhub]*azeventhubs.EventDataBatch
 	manager *EventHubManager
 }
 
 func NewHubBatches(manager *EventHubManager) *HubBatches {
 	return &HubBatches{
-		batches: make(map[ScopedEventhub][]*azeventhubs.EventDataBatch),
+		batches: make(map[ScopedEventhub]*azeventhubs.EventDataBatch),
 		manager: manager,
 	}
 }
 
 func (h *HubBatches) AddEvent(ctx context.Context, name ScopedEventhub, event string) error {
-	batches, ok := h.batches[name]
+	batch, ok := h.batches[name]
 	if !ok {
-		batches = []*azeventhubs.EventDataBatch{}
-	}
-
-	if len(batches) == 0 {
 		newBatch, err := h.manager.CreateEventDataBatch(ctx, name)
 		if err != nil {
 			return err
 		}
-		batches = append(batches, newBatch)
+		batch = newBatch
 	}
 
-	if err := tryAddEventToBatch(event, batches[len(batches)-1]); err != nil {
+	err := tryAddEventToBatch(event, batch)
+	if err != nil {
 		if strings.Contains(err.Error(), "too large for the batch") {
-			overflowBatch, err := h.handleBatchOverflow(ctx, name, event)
+			log.WithFields(log.Fields{
+				"event": event,
+			}).Infof("event too large for batch, sending batch - %s", name)
+			err = h.sendBatch(ctx, name, batch)
 			if err != nil {
-				return fmt.Errorf("failed to handle batch overflow: %v", err)
+				return fmt.Errorf("failed to send batch: %v", err)
 			}
-			batches = append(batches, overflowBatch)
+			delete(h.batches, name)
 		} else {
 			return fmt.Errorf("failed to add event data: %v", err)
 		}
+	} else {
+		h.batches[name] = batch
 	}
 
-	h.batches[name] = batches
 	return nil
-}
-
-func (h *HubBatches) handleBatchOverflow(
-	ctx context.Context,
-	name ScopedEventhub,
-	event string,
-) (*azeventhubs.EventDataBatch, error) {
-	newBatch, err := h.manager.CreateEventDataBatch(ctx, name)
-	if err != nil {
-		return nil, err
-	}
-	if err := tryAddEventToBatch(event, newBatch); err != nil {
-		return nil, fmt.Errorf("failed to add event data to new batch: %v", err)
-	}
-	return newBatch, nil
 }
 
 func (h *HubBatches) Len() int {
@@ -77,9 +63,7 @@ func (h *HubBatches) Len() int {
 // ForEach calls the given function for each ScopedEventhub and batch pair
 func (h *HubBatches) ForEach(fn func(ScopedEventhub, *azeventhubs.EventDataBatch)) {
 	for name, batches := range h.batches {
-		for _, batch := range batches {
-			fn(name, batch)
-		}
+		fn(name, batches)
 	}
 }
 
@@ -144,7 +128,7 @@ func (h *HubBatches) flushAllBatches(
 
 // Clear removes all batches from the HubBatches
 func (h *HubBatches) Clear() {
-	h.batches = make(map[ScopedEventhub][]*azeventhubs.EventDataBatch)
+	h.batches = make(map[ScopedEventhub]*azeventhubs.EventDataBatch)
 }
 
 func tryAddEventToBatch(event string, batch *azeventhubs.EventDataBatch) error {
