@@ -12,6 +12,8 @@ import (
 	conns3 "github.com/PeerDB-io/peer-flow/connectors/s3"
 	connsnowflake "github.com/PeerDB-io/peer-flow/connectors/snowflake"
 	connsqlserver "github.com/PeerDB-io/peer-flow/connectors/sqlserver"
+
+	connClickhouse "github.com/PeerDB-io/peer-flow/connectors/clickhouse"
 	"github.com/PeerDB-io/peer-flow/generated/protos"
 	"github.com/PeerDB-io/peer-flow/model"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -204,6 +206,7 @@ func GetQRepSyncConnector(ctx context.Context, config *protos.Peer) (QRepSyncCon
 	}
 }
 
+// PankajTodo
 func GetConnector(ctx context.Context, peer *protos.Peer) (Connector, error) {
 	inner := peer.Type
 	switch inner {
@@ -239,6 +242,8 @@ func GetConnector(ctx context.Context, peer *protos.Peer) (Connector, error) {
 			return nil, fmt.Errorf("missing s3 config for %s peer %s", peer.Type.String(), peer.Name)
 		}
 		return conns3.NewS3Connector(ctx, s3Config)
+	case protos.DBType_CLICKHOUSE:
+		retrun connClickhouse.NewClickhouseConnector(ctx, config.GetClickhouseConfig())
 	// case protos.DBType_EVENTHUB:
 	// 	return connsqlserver.NewSQLServerConnector(ctx, config.GetSqlserverConfig())
 	default:
