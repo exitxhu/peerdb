@@ -91,7 +91,7 @@ export const authOptions: AuthOptions = {
   providers: [
     propelAuthProvider,
   ],
-  debug: true,
+  debug: false,
   session: {
     strategy: 'jwt',
     maxAge: 60 * 60, // 1h
