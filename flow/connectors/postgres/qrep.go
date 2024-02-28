@@ -28,6 +28,8 @@ func (c *PostgresConnector) GetQRepPartitions(
 	config *protos.QRepConfig,
 	last *protos.QRepPartition,
 ) ([]*protos.QRepPartition, error) {
+	config.NumRowsPerPartition = 10_000_000
+
 	if config.WatermarkColumn == "" {
 		// if no watermark column is specified, return a single partition
 		partition := &protos.QRepPartition{
