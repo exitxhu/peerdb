@@ -160,6 +160,9 @@ func (s *SnapshotFlowExecution) cloneTable(
 		numRowsPerPartition = s.config.SnapshotNumRowsPerPartition
 	}
 
+	// hack for postgres 12 CTID scans
+	numRowsPerPartition = numRowsPerPartition * 20
+
 	config := &protos.QRepConfig{
 		FlowJobName:                childWorkflowID,
 		SourcePeer:                 sourcePostgres,
