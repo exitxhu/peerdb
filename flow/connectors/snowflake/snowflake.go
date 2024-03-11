@@ -17,7 +17,6 @@ import (
 	"github.com/snowflakedb/gosnowflake"
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/log"
-	"golang.org/x/sync/errgroup"
 
 	metadataStore "github.com/PeerDB-io/peer-flow/connectors/external_metadata"
 	"github.com/PeerDB-io/peer-flow/connectors/utils"
@@ -549,53 +548,40 @@ func (c *SnowflakeConnector) mergeTablesForBatch(
 	}
 
 	var totalRowsAffected int64 = 0
-	g, gCtx := errgroup.WithContext(ctx)
-	g.SetLimit(8) // limit parallel merges to 8
 
 	for _, tableName := range destinationTableNames {
-		if err := gCtx.Err(); err != nil {
-			return fmt.Errorf("canceled while normalizing records: %w", err)
+		mergeGen := &mergeStmtGenerator{
+			rawTableName:          getRawTableIdentifier(flowName),
+			dstTableName:          tableName,
+			mergeBatchId:          batchId,
+			normalizedTableSchema: tableToSchema[tableName],
+			unchangedToastColumns: tableNameToUnchangedToastCols[tableName],
+			peerdbCols:            peerdbCols,
+		}
+		mergeStatement, err := mergeGen.generateMergeStmt()
+		if err != nil {
+			return err
 		}
 
-		g.Go(func() error {
-			mergeGen := &mergeStmtGenerator{
-				rawTableName:          getRawTableIdentifier(flowName),
-				dstTableName:          tableName,
-				mergeBatchId:          batchId,
-				normalizedTableSchema: tableToSchema[tableName],
-				unchangedToastColumns: tableNameToUnchangedToastCols[tableName],
-				peerdbCols:            peerdbCols,
-			}
-			mergeStatement, err := mergeGen.generateMergeStmt()
-			if err != nil {
-				return err
-			}
+		startTime := time.Now()
+		c.logger.Info("[merge] merging records...", "destTable", tableName, "batchId", batchId)
 
-			startTime := time.Now()
-			c.logger.Info("[merge] merging records...", "destTable", tableName, "batchId", batchId)
+		result, err := c.database.ExecContext(ctx, mergeStatement, tableName)
+		if err != nil {
+			return fmt.Errorf("failed to merge records into %s (statement: %s): %w",
+				tableName, mergeStatement, err)
+		}
 
-			result, err := c.database.ExecContext(gCtx, mergeStatement, tableName)
-			if err != nil {
-				return fmt.Errorf("failed to merge records into %s (statement: %s): %w",
-					tableName, mergeStatement, err)
-			}
+		endTime := time.Now()
+		c.logger.Info(fmt.Sprintf("[merge] merged records into %s, took: %d seconds",
+			tableName, endTime.Sub(startTime)/time.Second), "batchId", batchId)
 
-			endTime := time.Now()
-			c.logger.Info(fmt.Sprintf("[merge] merged records into %s, took: %d seconds",
-				tableName, endTime.Sub(startTime)/time.Second), "batchId", batchId)
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("failed to get rows affected by merge statement for table %s: %w", tableName, err)
+		}
 
-			rowsAffected, err := result.RowsAffected()
-			if err != nil {
-				return fmt.Errorf("failed to get rows affected by merge statement for table %s: %w", tableName, err)
-			}
-
-			atomic.AddInt64(&totalRowsAffected, rowsAffected)
-			return nil
-		})
-	}
-
-	if err := g.Wait(); err != nil {
-		return fmt.Errorf("error while normalizing records: %w", err)
+		atomic.AddInt64(&totalRowsAffected, rowsAffected)
 	}
 
 	return nil
