@@ -3,8 +3,9 @@ package utils
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
-	"github.com/yuin/gopher-lua"
+	lua "github.com/yuin/gopher-lua"
 
 	"github.com/PeerDB-io/gluaflatbuffers"
 	"github.com/PeerDB-io/gluajson"
@@ -132,12 +133,15 @@ func (pool *LPool[T]) Spawn() error {
 	}
 	pool.size += 1
 	go func() {
+		// log pool size
+		slog.Info("[goroutine] count (pool size)", "size", pool.size)
 		defer ls.Close()
 		for message := range pool.messages {
 			message.ret <- message.f(ls)
 			close(message.ret)
 		}
 	}()
+	slog.Info("Lua pool size", "size", pool.size)
 	return nil
 }
 
